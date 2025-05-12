@@ -1,62 +1,82 @@
 package com.wrx.paymentsystem.controller;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import static org.mockito.Mockito.when;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.context.TestConfiguration;   // << THIS ONE
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.wrx.paymentsystem.security.JwtService;
 
-@WebMvcTest(JwtController.class)
-@Import(JwtControllerTest.TestConfig.class)  // import custom config
+@ExtendWith(MockitoExtension.class)
 public class JwtControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private JwtService jwtService;  // no mockbean, simple Autowired
+    @Mock
+    private JwtService jwtService;
+    
+    @InjectMocks
+    private JwtController jwtController;
 
-    @TestConfiguration
-    static class TestConfig {
-        @Bean
-        public JwtService jwtService() {
-            return org.mockito.Mockito.mock(JwtService.class);  // manually return a mock
-        }
+    private final String testUsername = "testUser";
+    private final String testToken = "test.token.value";
+
+    @BeforeEach
+    public void setup() {
+        mockMvc = MockMvcBuilders.standaloneSetup(jwtController).build();
+    }
+
+    private UserDetails createTestUserDetails() {
+        return User.builder()
+                .username(testUsername)
+                .password("password")
+                .roles("USER")
+                .build();
     }
 
     @Test
-    public void testGenerateToken() throws Exception {
-        String username = "testUser";
-        String token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
-
-        when(jwtService.generateToken(username)).thenReturn(token);
+    public void generateToken_ShouldReturnToken() throws Exception {
+        when(jwtService.generateToken(any(UserDetails.class))).thenReturn(testToken);
 
         mockMvc.perform(post("/api/generate-token")
-                        .param("username", username))
-                .andExpect(status().isOk())
-                .andExpect(content().string(token));
+                .param("username", testUsername))
+            .andExpect(status().isOk())
+            .andExpect(content().string(testToken));
     }
 
     @Test
-    public void testValidateToken() throws Exception {
-        String username = "testUser";
-        String token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
-
-        when(jwtService.validateToken(token, username)).thenReturn(true);
+    public void validateToken_ShouldReturnTrueForValidToken() throws Exception {
+        UserDetails userDetails = createTestUserDetails();
+        when(jwtService.isTokenValid(testToken, userDetails)).thenReturn(true);
 
         mockMvc.perform(get("/api/validate-token")
-                        .param("token", token)
-                        .param("username", username))
-                .andExpect(status().isOk())
-                .andExpect(content().string("true"));
+                .param("token", testToken)
+                .param("username", testUsername))
+            .andExpect(status().isOk())
+            .andExpect(content().string("true"));
+    }
+
+    @Test
+    public void validateToken_ShouldReturnFalseForInvalidToken() throws Exception {
+        UserDetails userDetails = createTestUserDetails();
+        when(jwtService.isTokenValid("invalid.token", userDetails)).thenReturn(false);
+
+        mockMvc.perform(get("/api/validate-token")
+                .param("token", "invalid.token")
+                .param("username", testUsername))
+            .andExpect(status().isOk())
+            .andExpect(content().string("false"));
     }
 }

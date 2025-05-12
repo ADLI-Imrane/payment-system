@@ -1,14 +1,16 @@
 package com.wrx.paymentsystem.config;
 
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 
-@TestConfiguration
+@Configuration
 public class TestConfig {
-
+    
     @Bean
-    public AuthenticationManager authenticationManager() {
-        return authentication -> authentication;
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration authenticationConfiguration) throws Exception {
+        return authenticationConfiguration.getAuthenticationManager();
     }
 }

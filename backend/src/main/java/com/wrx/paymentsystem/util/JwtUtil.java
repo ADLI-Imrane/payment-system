@@ -1,63 +1,73 @@
 package com.wrx.paymentsystem.util;
 
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Function;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 
 @Component
 public class JwtUtil {
 
     @Value("${jwt.secret}")
-    private String secretKey;
+    private String secret;
 
-    private static final long EXPIRATION_TIME = 86400000; // 24 hours
+    @Value("${jwt.expiration}")
+    private long expirationTime;
 
-    // Generate a token for the user
-    public String generateToken(String username) {
-        SecretKey key = new SecretKeySpec(secretKey.getBytes(), SignatureAlgorithm.HS512.getJcaName());
+    public String generateToken(UserDetails userDetails) {
+        Map<String, Object> claims = new HashMap<>();
+        return createToken(claims, userDetails.getUsername());
+    }
+
+    private String createToken(Map<String, Object> claims, String subject) {
+        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes());
         return Jwts.builder()
-                .setSubject(username)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
-                .signWith(SignatureAlgorithm.HS512, key)  // Use SecretKey with signWith
+                .setClaims(claims)
+                .setSubject(subject)
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + expirationTime))
+                .signWith(key, SignatureAlgorithm.HS512)
                 .compact();
     }
 
-    // Validate the token and get the username
     public String extractUsername(String token) {
-        JwtParser parser = Jwts.parser(); // Use Jwts.parser() instead of parserBuilder()
-        Claims claims = parser
-                .setSigningKey(secretKey.getBytes())  // Use byte array for the signing key
-                .parseClaimsJws(token)
-                .getBody();
-        return claims.getSubject();
+        return extractClaim(token, Claims::getSubject);
     }
 
-    // Check if the token is expired
-    public boolean isTokenExpired(String token) {
+    public Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
+    }
+
+    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+        final Claims claims = extractAllClaims(token);
+        return claimsResolver.apply(claims);
+    }
+
+    private Claims extractAllClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(secret.getBytes())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        final String username = extractUsername(token);
+        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    }
+
+    private boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());
-    }
-
-    private Date extractExpiration(String token) {
-        JwtParser parser = Jwts.parser(); // Use Jwts.parser() instead of parserBuilder()
-        Claims claims = parser
-                .setSigningKey(secretKey.getBytes())  // Use byte array for the signing key
-                .parseClaimsJws(token)
-                .getBody();
-        return claims.getExpiration();
-    }
-
-    // Validate the token
-    public boolean validateToken(String token, String username) {
-        return (username.equals(extractUsername(token)) && !isTokenExpired(token));
     }
 }

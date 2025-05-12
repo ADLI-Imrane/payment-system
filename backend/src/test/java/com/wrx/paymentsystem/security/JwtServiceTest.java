@@ -1,56 +1,75 @@
 package com.wrx.paymentsystem.security;
 
+import java.lang.reflect.Field;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 
 public class JwtServiceTest {
 
     private JwtService jwtService;
+    private UserDetails userDetails;
 
     @BeforeEach
-    public void setUp() {
+    public void setUp() throws Exception {
         jwtService = new JwtService();
+        userDetails = User.builder()
+                .username("testUser")
+                .password("password")
+                .roles("USER")
+                .build();
+
+        // Set private fields using reflection
+        setPrivateField(jwtService, "secretKey", "test-secret-key-1234567890-1234567890-1234567890");
+        setPrivateField(jwtService, "jwtExpiration", 86400000L); // 24 hours
+    }
+
+    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     @Test
-    public void testGenerateToken() {
-        String username = "testUser";
-        String token = jwtService.generateToken(username);
-
+    public void testGenerateAndValidateToken() {
+        String token = jwtService.generateToken(userDetails);
         assertNotNull(token);
-        assertTrue(token.startsWith("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")); // Check the header part of the JWT
+        assertTrue(jwtService.isTokenValid(token, userDetails));
     }
 
     @Test
     public void testExtractUsername() {
-        String username = "testUser";
-        String token = jwtService.generateToken(username);
-        
-        String extractedUsername = jwtService.extractUsername(token);
-        assertEquals(username, extractedUsername);
+        String token = jwtService.generateToken(userDetails);
+        assertEquals(userDetails.getUsername(), jwtService.extractUsername(token));
     }
 
     @Test
-    public void testIsTokenExpired() {
-        String username = "testUser";
-        String token = jwtService.generateToken(username);
+    public void testTokenValidityWithDifferentUser() {
+        String token = jwtService.generateToken(userDetails);
         
-        assertFalse(jwtService.isTokenExpired(token)); // Token should not be expired immediately
-
-        // Simulate expiration by modifying expiration date or mock it in real scenarios.
-        // You could mock Date.now() to test this behavior
+        UserDetails otherUser = User.builder()
+                .username("otherUser")
+                .password("password")
+                .roles("USER")
+                .build();
+        
+        assertFalse(jwtService.isTokenValid(token, otherUser));
     }
 
     @Test
-    public void testValidateToken() {
-        String username = "testUser";
-        String token = jwtService.generateToken(username);
+    public void testTokenExpiration() throws Exception {
+        // Set very short expiration (1ms)
+        setPrivateField(jwtService, "jwtExpiration", 1L);
         
-        boolean isValid = jwtService.validateToken(token, username);
-        assertTrue(isValid);
+        String token = jwtService.generateToken(userDetails);
+        Thread.sleep(2); // Wait longer than expiration
+        
+        assertFalse(jwtService.isTokenValid(token, userDetails));
     }
 }
